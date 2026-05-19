@@ -2,8 +2,7 @@ const {
 default: makeWASocket,
 useMultiFileAuthState,
 fetchLatestBaileysVersion,
-DisconnectReason,
-Browsers
+DisconnectReason
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
@@ -24,7 +23,7 @@ const sock = makeWASocket({
 version,
 logger: P({ level: "silent" }),
 auth: state,
-browser: Browsers.chrome("GojoBot")
+browser: ["GojoBot", "Chrome", "1.0.0"]
 })
 
 // CÓDIGO DE PAREAMENTO
