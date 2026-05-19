@@ -1,11 +1,12 @@
 const {
 default: makeWASocket,
 useMultiFileAuthState,
-fetchLatestBaileysVersion,
-DisconnectReason
+DisconnectReason,
+fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
+const qrcode = require("qrcode-terminal")
 
 const prefix = "!"
 
@@ -22,35 +23,22 @@ await fetchLatestBaileysVersion()
 const sock = makeWASocket({
 version,
 logger: P({ level: "silent" }),
-auth: state,
-browser: ["GojoBot", "Chrome", "1.0.0"]
+auth: state
 })
 
-// CÓDIGO DE PAREAMENTO
-if (!sock.authState.creds.registered) {
+// QR CODE
+sock.ev.on("connection.update",
+async ({ connection, lastDisconnect, qr }) => {
 
-const numero = "5598981666909"
+if(qr) {
 
-setTimeout(async () => {
+console.log("📲 ESCANEIE O QR CODE:\n")
 
-const code =
-await sock.requestPairingCode(numero)
-
-console.log(`
-╔════════════════════╗
-║ CÓDIGO DE PAREAMENTO
-╚════════════════════╝
-
-📲 ${code}
-`)
-
-}, 3000)
+qrcode.generate(qr, {
+small: true
+})
 
 }
-
-// CONEXÃO
-sock.ev.on("connection.update",
-async ({ connection, lastDisconnect }) => {
 
 if(connection === "open") {
 
@@ -270,7 +258,7 @@ mentions: mencoes
 
 }
 
-// GRUPO
+// ABRIR/FECHAR GRUPO
 if(command === "grupo") {
 
 if(!isAdmin)
