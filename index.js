@@ -1,22 +1,18 @@
 const {
 default: makeWASocket,
-useMultiFileAuthState,
 DisconnectReason,
+useMultiFileAuthState,
 fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
+const fs = require("fs")
 const readline = require("readline")
 
 const DONO = "989816666909"
 
 let ranking = {}
 let atividade = {}
-
-const rl = readline.createInterface({
-input: process.stdin,
-output: process.stdout
-})
 
 async function iniciarBot(){
 
@@ -39,24 +35,34 @@ sock.ev.on("creds.update", saveCreds)
 
 if(!sock.authState.creds.registered){
 
+const rl = readline.createInterface({
+input: process.stdin,
+output: process.stdout
+})
+
 rl.question(
-"Digite seu número com DDI:\n",
+"Digite o número com DDI:\n",
 async(numero)=>{
 
-let codigo =
+try{
+
+const codigo =
 await sock.requestPairingCode(numero)
 
-codigo = codigo.match(/.{1,4}/g).join("-")
-
 console.log(`
-=================================
+====================================
 
-SEU CÓDIGO:
+CÓDIGO PARA CONECTAR:
 
 ${codigo}
 
-=================================
+====================================
 `)
+
+}catch(e){
+
+console.log(e)
+}
 })
 }
 
@@ -72,9 +78,11 @@ lastDisconnect
 
 if(connection === "open"){
 
-console.log("================================")
-console.log("BOT ONLINE COM SUCESSO")
-console.log("================================")
+console.log(`
+=========================
+BOT ONLINE COM SUCESSO
+=========================
+`)
 }
 
 if(connection === "close"){
@@ -93,7 +101,8 @@ iniciarBot()
 
 /* BEM VINDO */
 
-sock.ev.on("group-participants.update",
+sock.ev.on(
+"group-participants.update",
 async(data)=>{
 
 try{
@@ -150,8 +159,15 @@ msg.message.extendedTextMessage?.text ||
 ""
 
 const grupo = msg.key.remoteJid
-const sender = msg.key.participant || msg.key.remoteJid
-const nome = msg.pushName || "Membro"
+
+const sender =
+msg.key.participant ||
+msg.key.remoteJid
+
+const nome =
+msg.pushName || "Membro"
+
+/* RANK */
 
 if(!ranking[sender]) ranking[sender] = 0
 ranking[sender]++
@@ -170,14 +186,14 @@ text:
 
 👑 ADM
 /add 551199999999
-/remove marcar
-/promover marcar
-/rebaixar marcar
+/remove @membro
+/promover @membro
+/rebaixar @membro
 
 📊 GRUPO
+/top
 /rank
 /inativos
-/top
 
 ⚡ OUTROS
 /ping
@@ -201,6 +217,7 @@ if(texto === "/dono"){
 await sock.sendMessage(grupo,{
 text:
 `👑 Dono:
+
 https://wa.me/${DONO}`
 })
 }
@@ -213,17 +230,19 @@ let top = Object.entries(ranking)
 .sort((a,b)=>b[1]-a[1])
 .slice(0,10)
 
-let textoTop = "🏆 TOP MEMBROS\n\n"
+let mensagem =
+"🏆 TOP MEMBROS\n\n"
 
 for(let i = 0; i < top.length; i++){
 
-textoTop +=
-`${i+1}° ${top[i][0].split("@")[0]}
+mensagem +=
+`${i+1}° @${top[i][0].split("@")[0]}
 💬 ${top[i][1]} mensagens\n\n`
 }
 
 await sock.sendMessage(grupo,{
-text:textoTop
+text:mensagem,
+mentions:top.map(x=>x[0])
 })
 }
 
@@ -231,14 +250,12 @@ text:textoTop
 
 if(texto === "/rank"){
 
-let total = ranking[sender] || 0
-
 await sock.sendMessage(grupo,{
 text:
 `📊 ${nome}
 
 💬 Mensagens:
-${total}`
+${ranking[sender]}`
 })
 }
 
@@ -250,22 +267,51 @@ let agora = Date.now()
 
 let lista = "😴 INATIVOS\n\n"
 
+let mentions = []
+
 for(let user in atividade){
 
 let tempo =
-(agora - atividade[user]) / 1000 / 60
+(agora - atividade[user]) /
+1000 / 60
 
 if(tempo > 60){
 
 lista +=
 `@${user.split("@")[0]}
 ⏰ ${Math.floor(tempo)} minutos\n\n`
+
+mentions.push(user)
 }
 }
 
 await sock.sendMessage(grupo,{
 text:lista,
-mentions:Object.keys(atividade)
+mentions:mentions
+})
+}
+
+/* ADD */
+
+if(texto.startsWith("/add")){
+
+if(!grupo.endsWith("@g.us")) return
+
+let numero =
+texto.replace("/add ","")
+.replace(/\D/g,"")
+
+let jid =
+numero + "@s.whatsapp.net"
+
+await sock.groupParticipantsUpdate(
+grupo,
+[jid],
+"add"
+)
+
+await sock.sendMessage(grupo,{
+text:"✅ Membro adicionado"
 })
 }
 
@@ -273,8 +319,11 @@ mentions:Object.keys(atividade)
 
 if(texto.startsWith("/remove")){
 
+if(!grupo.endsWith("@g.us")) return
+
 let mention =
-msg.message.extendedTextMessage?.contextInfo?.mentionedJid
+msg.message.extendedTextMessage
+?.contextInfo?.mentionedJid
 
 if(!mention) return
 
@@ -283,14 +332,21 @@ grupo,
 [mention[0]],
 "remove"
 )
+
+await sock.sendMessage(grupo,{
+text:"✅ Membro removido"
+})
 }
 
 /* PROMOVER */
 
 if(texto.startsWith("/promover")){
 
+if(!grupo.endsWith("@g.us")) return
+
 let mention =
-msg.message.extendedTextMessage?.contextInfo?.mentionedJid
+msg.message.extendedTextMessage
+?.contextInfo?.mentionedJid
 
 if(!mention) return
 
@@ -299,14 +355,21 @@ grupo,
 [mention[0]],
 "promote"
 )
+
+await sock.sendMessage(grupo,{
+text:"✅ Agora é ADM"
+})
 }
 
 /* REBAIXAR */
 
 if(texto.startsWith("/rebaixar")){
 
+if(!grupo.endsWith("@g.us")) return
+
 let mention =
-msg.message.extendedTextMessage?.contextInfo?.mentionedJid
+msg.message.extendedTextMessage
+?.contextInfo?.mentionedJid
 
 if(!mention) return
 
@@ -315,21 +378,10 @@ grupo,
 [mention[0]],
 "demote"
 )
-}
 
-/* ADD */
-
-if(texto.startsWith("/add")){
-
-let numero =
-texto.replace("/add ","") +
-"@s.whatsapp.net"
-
-await sock.groupParticipantsUpdate(
-grupo,
-[numero],
-"add"
-)
+await sock.sendMessage(grupo,{
+text:"✅ ADM removido"
+})
 }
 
 })
