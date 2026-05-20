@@ -1,23 +1,28 @@
+const express = require("express")
+const app = express()
+
+app.get("/", (req, res) => {
+res.send("GOJO BOT ONLINE ⚡")
+})
+
+app.listen(process.env.PORT || 3000)
+
 const {
 default: makeWASocket,
-DisconnectReason,
 useMultiFileAuthState,
+DisconnectReason,
 fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
-const fs = require("fs")
-const readline = require("readline")
 
-const DONO = "989816666909"
+const prefix = "!"
+const admins = ["639164712839"]
 
-let ranking = {}
-let atividade = {}
-
-async function iniciarBot(){
+async function startBot() {
 
 const { state, saveCreds } =
-await useMultiFileAuthState("./auth_info")
+await useMultiFileAuthState("./sessao")
 
 const { version } =
 await fetchLatestBaileysVersion()
@@ -25,366 +30,213 @@ await fetchLatestBaileysVersion()
 const sock = makeWASocket({
 version,
 auth: state,
-logger: P({ level:"silent" }),
-browser:["GOJO BOT","Chrome","1.0.0"]
+logger: P({ level: "silent" }),
+printQRInTerminal: false
+})
+
+/* 🔥 CONEXÃO POR CÓDIGO (SEM QR) */
+if (!sock.authState.creds.registered) {
+
+setTimeout(async () => {
+
+const phoneNumber = "639164712839" // 👈 SEU NÚMERO AQUI
+
+const code = await sock.requestPairingCode(phoneNumber)
+
+console.log("\n🔥 SEU CÓDIGO DE CONEXÃO:")
+console.log(code)
+console.log("\n👉 Vá no WhatsApp > Dispositivos conectados > Conectar com código\n")
+
+}, 3000)
+
+}
+
+/* 🔁 CONEXÃO */
+sock.ev.on("connection.update", (update) => {
+
+const { connection, lastDisconnect } = update
+
+if (connection === "open") {
+console.log(`
+╔════════════════════╗
+║  GOJO BOT ONLINE ⚡
+╚════════════════════╝
+`)
+}
+
+if (connection === "close") {
+
+const statusCode = lastDisconnect?.error?.output?.statusCode
+
+if (statusCode !== DisconnectReason.loggedOut) {
+startBot()
+}
+}
+
 })
 
 sock.ev.on("creds.update", saveCreds)
 
-/* CONECTAR VIA CÓDIGO */
+/* 👋 WELCOME */
+sock.ev.on("group-participants.update", async (anu) => {
 
-if(!sock.authState.creds.registered){
+try {
 
-const rl = readline.createInterface({
-input: process.stdin,
-output: process.stdout
+const metadata = await sock.groupMetadata(anu.id)
+
+for (const num of anu.participants) {
+
+if (anu.action === "add") {
+
+await sock.sendMessage(anu.id, {
+text: `
+👁️ DOMAIN EXPANSION 👁️
+
+⚡ Bem vindo @${num.split("@")[0]}
+
+📍 Grupo:
+${metadata.subject}
+`,
+mentions: [num]
 })
 
-rl.question(
-"Digite o número com DDI:\n",
-async(numero)=>{
-
-try{
-
-const codigo =
-await sock.requestPairingCode(numero)
-
-console.log(`
-====================================
-
-CÓDIGO PARA CONECTAR:
-
-${codigo}
-
-====================================
-`)
-
-}catch(e){
-
-console.log(e)
-}
-})
 }
 
-/* CONEXÃO */
-
-sock.ev.on("connection.update",
-async(update)=>{
-
-const {
-connection,
-lastDisconnect
-} = update
-
-if(connection === "open"){
-
-console.log(`
-=========================
-BOT ONLINE COM SUCESSO
-=========================
-`)
 }
 
-if(connection === "close"){
+} catch (e) {}
 
-const shouldReconnect =
-lastDisconnect?.error?.output?.statusCode
-!== DisconnectReason.loggedOut
-
-if(shouldReconnect){
-
-console.log("Reconectando...")
-iniciarBot()
-}
-}
 })
 
-/* BEM VINDO */
-
-sock.ev.on(
-"group-participants.update",
-async(data)=>{
-
-try{
-
-const grupo = data.id
-
-for(const user of data.participants){
-
-if(data.action === "add"){
-
-await sock.sendMessage(grupo,{
-text:
-`🎉 Bem vindo @${user.split("@")[0]}
-
-🔥 Aproveite o grupo
-🚫 Sem spam
-✅ Respeite todos
-
-Digite:
-menu`,
-mentions:[user]
-})
-}
-
-if(data.action === "remove"){
-
-await sock.sendMessage(grupo,{
-text:
-`😢 @${user.split("@")[0]} saiu do grupo`,
-mentions:[user]
-})
-}
-}
-
-}catch(e){
-
-console.log(e)
-}
-})
-
-/* MENSAGENS */
-
-sock.ev.on("messages.upsert",
-async({ messages })=>{
+/* 💬 COMANDOS */
+sock.ev.on("messages.upsert", async ({ messages }) => {
 
 const msg = messages[0]
+if (!msg.message) return
 
-if(!msg.message) return
-if(msg.key.fromMe) return
+const from = msg.key.remoteJid
+const sender = msg.key.participant || from
+const isGroup = from.endsWith("@g.us")
 
-const texto =
+const body =
 msg.message.conversation ||
-msg.message.extendedTextMessage?.text ||
-""
+msg.message.extendedTextMessage?.text || ""
 
-const grupo = msg.key.remoteJid
+if (!body.startsWith(prefix)) return
 
-const sender =
-msg.key.participant ||
-msg.key.remoteJid
+const args = body.slice(prefix.length).trim().split(/ +/)
+const command = args.shift().toLowerCase()
 
-const nome =
-msg.pushName || "Membro"
+const isAdmin = admins.includes(sender.split("@")[0])
 
-/* RANK */
+const groupMetadata = isGroup
+? await sock.groupMetadata(from)
+: null
 
-if(!ranking[sender]) ranking[sender] = 0
-ranking[sender]++
+const groupName = isGroup ? groupMetadata.subject : "Privado"
 
-atividade[sender] = Date.now()
+/* 👑 MENU */
+if (command === "menu") {
 
-console.log(nome + ": " + texto)
+await sock.sendMessage(from, {
+text: `
+╔════ MENU GOJO BOT ════╗
 
-/* MENU */
+👤 @${sender.split("@")[0]}
 
-if(texto.toLowerCase() === "menu"){
+👑 ${isAdmin ? "Admin" : "User"}
 
-await sock.sendMessage(grupo,{
-text:
-`📋 *GOJO BOT*
+📍 ${groupName}
 
-👑 ADM
-/add 551199999999
-/remove @membro
-/promover @membro
-/rebaixar @membro
+👑 MENU ADM
+➤ !grupo abrir
+➤ !grupo fechar
 
-📊 GRUPO
-/top
-/rank
-/inativos
+👋 BEM VINDO
+➤ automático
 
-⚡ OUTROS
-/ping
-/dono`
+💤 MENU INATIVOS
+➤ !inativos
+➤ !marcar
+
+🤖 SISTEMA
+➤ !ping
+➤ !bot
+➤ !menu
+
+╚══════════════════════╝
+`,
+mentions: [sender]
+})
+
+}
+
+/* 🏓 PING */
+if (command === "ping") {
+await sock.sendMessage(from, { text: "🏓 PONG ⚡ BOT ONLINE" })
+}
+
+/* 🤖 BOT */
+if (command === "bot") {
+await sock.sendMessage(from, {
+text: "🤖 GOJO BOT ONLINE ⚡"
 })
 }
 
-/* PING */
+/* 👥 MARCAR */
+if (command === "marcar") {
+if (!isGroup) return
 
-if(texto === "/ping"){
+const participants = groupMetadata.participants
 
-await sock.sendMessage(grupo,{
-text:"🏓 Pong!"
-})
-}
-
-/* DONO */
-
-if(texto === "/dono"){
-
-await sock.sendMessage(grupo,{
-text:
-`👑 Dono:
-
-https://wa.me/${DONO}`
-})
-}
-
-/* TOP */
-
-if(texto === "/top"){
-
-let top = Object.entries(ranking)
-.sort((a,b)=>b[1]-a[1])
-.slice(0,10)
-
-let mensagem =
-"🏆 TOP MEMBROS\n\n"
-
-for(let i = 0; i < top.length; i++){
-
-mensagem +=
-`${i+1}° @${top[i][0].split("@")[0]}
-💬 ${top[i][1]} mensagens\n\n`
-}
-
-await sock.sendMessage(grupo,{
-text:mensagem,
-mentions:top.map(x=>x[0])
-})
-}
-
-/* RANK */
-
-if(texto === "/rank"){
-
-await sock.sendMessage(grupo,{
-text:
-`📊 ${nome}
-
-💬 Mensagens:
-${ranking[sender]}`
-})
-}
-
-/* INATIVOS */
-
-if(texto === "/inativos"){
-
-let agora = Date.now()
-
-let lista = "😴 INATIVOS\n\n"
-
+let txt = "👥 MARCANDO TODOS\n\n"
 let mentions = []
 
-for(let user in atividade){
-
-let tempo =
-(agora - atividade[user]) /
-1000 / 60
-
-if(tempo > 60){
-
-lista +=
-`@${user.split("@")[0]}
-⏰ ${Math.floor(tempo)} minutos\n\n`
-
-mentions.push(user)
-}
+for (let m of participants) {
+txt += `➤ @${m.id.split("@")[0]}\n`
+mentions.push(m.id)
 }
 
-await sock.sendMessage(grupo,{
-text:lista,
-mentions:mentions
+await sock.sendMessage(from, { text: txt, mentions })
+}
+
+/* 💤 INATIVOS */
+if (command === "inativos") {
+if (!isGroup) return
+
+const participants = groupMetadata.participants
+
+let txt = "💤 MEMBROS DO GRUPO\n\n"
+let mentions = []
+
+participants.forEach((m, i) => {
+txt += `${i + 1}. @${m.id.split("@")[0]}\n`
+mentions.push(m.id)
 })
+
+await sock.sendMessage(from, { text: txt, mentions })
 }
 
-/* ADD */
+/* 👑 GRUPO */
+if (command === "grupo") {
 
-if(texto.startsWith("/add")){
+if (!isAdmin)
+return sock.sendMessage(from, { text: "❌ Só ADM" })
 
-if(!grupo.endsWith("@g.us")) return
-
-let numero =
-texto.replace("/add ","")
-.replace(/\D/g,"")
-
-let jid =
-numero + "@s.whatsapp.net"
-
-await sock.groupParticipantsUpdate(
-grupo,
-[jid],
-"add"
-)
-
-await sock.sendMessage(grupo,{
-text:"✅ Membro adicionado"
-})
+if (args[0] === "fechar") {
+await sock.groupSettingUpdate(from, "announcement")
+await sock.sendMessage(from, { text: "🔒 Grupo fechado" })
 }
 
-/* REMOVER */
-
-if(texto.startsWith("/remove")){
-
-if(!grupo.endsWith("@g.us")) return
-
-let mention =
-msg.message.extendedTextMessage
-?.contextInfo?.mentionedJid
-
-if(!mention) return
-
-await sock.groupParticipantsUpdate(
-grupo,
-[mention[0]],
-"remove"
-)
-
-await sock.sendMessage(grupo,{
-text:"✅ Membro removido"
-})
+if (args[0] === "abrir") {
+await sock.groupSettingUpdate(from, "not_announcement")
+await sock.sendMessage(from, { text: "🔓 Grupo aberto" })
 }
 
-/* PROMOVER */
-
-if(texto.startsWith("/promover")){
-
-if(!grupo.endsWith("@g.us")) return
-
-let mention =
-msg.message.extendedTextMessage
-?.contextInfo?.mentionedJid
-
-if(!mention) return
-
-await sock.groupParticipantsUpdate(
-grupo,
-[mention[0]],
-"promote"
-)
-
-await sock.sendMessage(grupo,{
-text:"✅ Agora é ADM"
-})
-}
-
-/* REBAIXAR */
-
-if(texto.startsWith("/rebaixar")){
-
-if(!grupo.endsWith("@g.us")) return
-
-let mention =
-msg.message.extendedTextMessage
-?.contextInfo?.mentionedJid
-
-if(!mention) return
-
-await sock.groupParticipantsUpdate(
-grupo,
-[mention[0]],
-"demote"
-)
-
-await sock.sendMessage(grupo,{
-text:"✅ ADM removido"
-})
 }
 
 })
+
 }
 
-iniciarBot()
+startBot()
