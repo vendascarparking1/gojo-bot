@@ -6,296 +6,333 @@ fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys")
 
 const P = require("pino")
-const qrcode = require("qrcode-terminal")
+const readline = require("readline")
 
-const prefix = "!"
+const DONO = "989816666909"
 
-const admins = ["5598981666909"]
+let ranking = {}
+let atividade = {}
 
-async function startBot() {
+const rl = readline.createInterface({
+input: process.stdin,
+output: process.stdout
+})
+
+async function iniciarBot(){
 
 const { state, saveCreds } =
-await useMultiFileAuthState("./sessao")
+await useMultiFileAuthState("./auth_info")
 
 const { version } =
 await fetchLatestBaileysVersion()
 
 const sock = makeWASocket({
 version,
-logger: P({ level: "silent" }),
-auth: state
+auth: state,
+logger: P({ level:"silent" }),
+browser:["GOJO BOT","Chrome","1.0.0"]
 })
 
-// QR CODE
-sock.ev.on("connection.update",
-async ({ connection, lastDisconnect, qr }) => {
+sock.ev.on("creds.update", saveCreds)
 
-if(qr) {
+/* CONECTAR VIA CÓDIGO */
 
-console.log("📲 ESCANEIE O QR CODE:\n")
+if(!sock.authState.creds.registered){
 
-qrcode.generate(qr, {
-small: true
-})
+rl.question(
+"Digite seu número com DDI:\n",
+async(numero)=>{
 
-}
+let codigo =
+await sock.requestPairingCode(numero)
 
-if(connection === "open") {
+codigo = codigo.match(/.{1,4}/g).join("-")
 
 console.log(`
-╔════════════════════╗
-║  GOJO BOT ONLINE ⚡
-╚════════════════════╝
-`)
+=================================
 
+SEU CÓDIGO:
+
+${codigo}
+
+=================================
+`)
+})
 }
 
-if(connection === "close") {
+/* CONEXÃO */
+
+sock.ev.on("connection.update",
+async(update)=>{
+
+const {
+connection,
+lastDisconnect
+} = update
+
+if(connection === "open"){
+
+console.log("================================")
+console.log("BOT ONLINE COM SUCESSO")
+console.log("================================")
+}
+
+if(connection === "close"){
 
 const shouldReconnect =
 lastDisconnect?.error?.output?.statusCode
 !== DisconnectReason.loggedOut
 
-if(shouldReconnect) {
-startBot()
-}
+if(shouldReconnect){
 
+console.log("Reconectando...")
+iniciarBot()
 }
-
+}
 })
 
-sock.ev.on("creds.update", saveCreds)
+/* BEM VINDO */
 
-// BEM VINDO
 sock.ev.on("group-participants.update",
-async (anu) => {
+async(data)=>{
 
-try {
+try{
 
-const metadata =
-await sock.groupMetadata(anu.id)
+const grupo = data.id
 
-for(const num of anu.participants) {
+for(const user of data.participants){
 
-if(anu.action === "add") {
+if(data.action === "add"){
 
-await sock.sendMessage(anu.id, {
-text: `
-👁️ DOMAIN EXPANSION 👁️
+await sock.sendMessage(grupo,{
+text:
+`🎉 Bem vindo @${user.split("@")[0]}
 
-⚡ Bem vindo @${num.split("@")[0]}
+🔥 Aproveite o grupo
+🚫 Sem spam
+✅ Respeite todos
 
-Prepare-se para o caos do Sukuna 👹
+Digite:
+menu`,
+mentions:[user]
+})
+}
 
-📍 Grupo:
-${metadata.subject}
-`,
-mentions: [num]
+if(data.action === "remove"){
+
+await sock.sendMessage(grupo,{
+text:
+`😢 @${user.split("@")[0]} saiu do grupo`,
+mentions:[user]
+})
+}
+}
+
+}catch(e){
+
+console.log(e)
+}
 })
 
-}
+/* MENSAGENS */
 
-}
-
-} catch(err) {
-console.log(err)
-}
-
-})
-
-// COMANDOS
 sock.ev.on("messages.upsert",
-async ({ messages }) => {
+async({ messages })=>{
 
 const msg = messages[0]
 
 if(!msg.message) return
+if(msg.key.fromMe) return
 
-const from = msg.key.remoteJid
-
-const sender =
-msg.key.participant || from
-
-const isGroup =
-from.endsWith("@g.us")
-
-const body =
+const texto =
 msg.message.conversation ||
-msg.message.extendedTextMessage?.text || ""
+msg.message.extendedTextMessage?.text ||
+""
 
-if(!body.startsWith(prefix)) return
+const grupo = msg.key.remoteJid
+const sender = msg.key.participant || msg.key.remoteJid
+const nome = msg.pushName || "Membro"
 
-const args =
-body.slice(prefix.length).trim().split(/ +/)
+if(!ranking[sender]) ranking[sender] = 0
+ranking[sender]++
 
-const command =
-args.shift().toLowerCase()
+atividade[sender] = Date.now()
 
-const isAdmin =
-admins.includes(
-sender.split("@")[0]
+console.log(nome + ": " + texto)
+
+/* MENU */
+
+if(texto.toLowerCase() === "menu"){
+
+await sock.sendMessage(grupo,{
+text:
+`📋 *GOJO BOT*
+
+👑 ADM
+/add 551199999999
+/remove marcar
+/promover marcar
+/rebaixar marcar
+
+📊 GRUPO
+/rank
+/inativos
+/top
+
+⚡ OUTROS
+/ping
+/dono`
+})
+}
+
+/* PING */
+
+if(texto === "/ping"){
+
+await sock.sendMessage(grupo,{
+text:"🏓 Pong!"
+})
+}
+
+/* DONO */
+
+if(texto === "/dono"){
+
+await sock.sendMessage(grupo,{
+text:
+`👑 Dono:
+https://wa.me/${DONO}`
+})
+}
+
+/* TOP */
+
+if(texto === "/top"){
+
+let top = Object.entries(ranking)
+.sort((a,b)=>b[1]-a[1])
+.slice(0,10)
+
+let textoTop = "🏆 TOP MEMBROS\n\n"
+
+for(let i = 0; i < top.length; i++){
+
+textoTop +=
+`${i+1}° ${top[i][0].split("@")[0]}
+💬 ${top[i][1]} mensagens\n\n`
+}
+
+await sock.sendMessage(grupo,{
+text:textoTop
+})
+}
+
+/* RANK */
+
+if(texto === "/rank"){
+
+let total = ranking[sender] || 0
+
+await sock.sendMessage(grupo,{
+text:
+`📊 ${nome}
+
+💬 Mensagens:
+${total}`
+})
+}
+
+/* INATIVOS */
+
+if(texto === "/inativos"){
+
+let agora = Date.now()
+
+let lista = "😴 INATIVOS\n\n"
+
+for(let user in atividade){
+
+let tempo =
+(agora - atividade[user]) / 1000 / 60
+
+if(tempo > 60){
+
+lista +=
+`@${user.split("@")[0]}
+⏰ ${Math.floor(tempo)} minutos\n\n`
+}
+}
+
+await sock.sendMessage(grupo,{
+text:lista,
+mentions:Object.keys(atividade)
+})
+}
+
+/* REMOVER */
+
+if(texto.startsWith("/remove")){
+
+let mention =
+msg.message.extendedTextMessage?.contextInfo?.mentionedJid
+
+if(!mention) return
+
+await sock.groupParticipantsUpdate(
+grupo,
+[mention[0]],
+"remove"
 )
-
-const groupMetadata =
-isGroup ?
-await sock.groupMetadata(from)
-: ""
-
-const groupName =
-isGroup ?
-groupMetadata.subject
-: "Privado"
-
-// MENU
-if(command === "menu") {
-
-const menu = `
-╔══════════════════╗
-║ 👁️ GOJO BOT 👁️
-╚══════════════════╝
-
-⚡ Usuário:
-@${sender.split("@")[0]}
-
-📍 Grupo:
-${groupName}
-
-╔═━━━✦ MENU ✦━━━═╗
-
-👑 !grupo abrir
-👑 !grupo fechar
-💤 !inativos
-👥 !marcar
-🏓 !ping
-🤖 !bot
-
-╚═━━━✦ SUKUNA ✦━━━═╝
-`
-
-await sock.sendMessage(from, {
-text: menu,
-mentions: [sender]
-})
-
 }
 
-// PING
-if(command === "ping") {
+/* PROMOVER */
 
-await sock.sendMessage(from, {
-text: "🏓 BOT ONLINE ⚡"
-})
+if(texto.startsWith("/promover")){
 
-}
+let mention =
+msg.message.extendedTextMessage?.contextInfo?.mentionedJid
 
-// BOT
-if(command === "bot") {
+if(!mention) return
 
-await sock.sendMessage(from, {
-text: `
-🤖 GOJO BOT ⚡
-
-🔥 Sukuna Mode ON
-👁️ Six Eyes Ativado
-`
-})
-
-}
-
-// MARCAR TODOS
-if(command === "marcar") {
-
-if(!isGroup) return
-
-const participantes =
-groupMetadata.participants
-
-let texto = "👥 MARCANDO TODOS\n\n"
-
-let mencoes = []
-
-for(let membro of participantes) {
-
-texto += `➤ @${membro.id.split("@")[0]}\n`
-
-mencoes.push(membro.id)
-
-}
-
-await sock.sendMessage(from, {
-text: texto,
-mentions: mencoes
-})
-
-}
-
-// INATIVOS
-if(command === "inativos") {
-
-if(!isGroup) return
-
-const participantes =
-groupMetadata.participants
-
-let texto =
-"💤 LISTA DE MEMBROS\n\n"
-
-let mencoes = []
-
-participantes.forEach((m, i) => {
-
-texto +=
-`${i + 1}. @${m.id.split("@")[0]}\n`
-
-mencoes.push(m.id)
-
-})
-
-await sock.sendMessage(from, {
-text: texto,
-mentions: mencoes
-})
-
-}
-
-// ABRIR/FECHAR GRUPO
-if(command === "grupo") {
-
-if(!isAdmin)
-return sock.sendMessage(from, {
-text: "❌ Apenas ADM."
-})
-
-if(args[0] === "fechar") {
-
-await sock.groupSettingUpdate(
-from,
-"announcement"
+await sock.groupParticipantsUpdate(
+grupo,
+[mention[0]],
+"promote"
 )
-
-await sock.sendMessage(from, {
-text: "🔒 Grupo fechado."
-})
-
 }
 
-if(args[0] === "abrir") {
+/* REBAIXAR */
 
-await sock.groupSettingUpdate(
-from,
-"not_announcement"
+if(texto.startsWith("/rebaixar")){
+
+let mention =
+msg.message.extendedTextMessage?.contextInfo?.mentionedJid
+
+if(!mention) return
+
+await sock.groupParticipantsUpdate(
+grupo,
+[mention[0]],
+"demote"
 )
+}
 
-await sock.sendMessage(from, {
-text: "🔓 Grupo aberto."
+/* ADD */
+
+if(texto.startsWith("/add")){
+
+let numero =
+texto.replace("/add ","") +
+"@s.whatsapp.net"
+
+await sock.groupParticipantsUpdate(
+grupo,
+[numero],
+"add"
+)
+}
+
 })
-
 }
 
-}
-
-})
-
-}
-
-startBot()
+iniciarBot()
