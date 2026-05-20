@@ -1,13 +1,15 @@
 {
   "name": "gojo-bot",
-  "version": "2.0.0",
-  "type": "commonjs",
+  "version": "1.0.0",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "6.7.7",
-    "pino": "^9.0.0"
+    "@whiskeysockets/baileys": "^6.7.8",
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0",
+    "express": "^4.19.2"
   }
 }
